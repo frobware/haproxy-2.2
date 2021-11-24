@@ -1075,6 +1075,7 @@ struct task *process_chk(struct task *t, void *context, unsigned short state)
 
 	if (check->type == PR_O2_EXT_CHK)
 		return process_chk_proc(t, context, state);
+	t->is_health_check = 1;
 	return process_chk_conn(t, context, state);
 
 }

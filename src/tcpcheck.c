@@ -1013,6 +1013,7 @@ enum tcpcheck_eval_ret tcpcheck_eval_connect(struct check *check, struct tcpchec
 
 	check->cs = cs;
 	conn = cs->conn;
+	conn->is_health_check = t->is_health_check;
 	conn_set_owner(conn, check->sess, NULL);
 
 	/* Maybe there were an older connection we were waiting on */

@@ -465,6 +465,7 @@ struct cs_info {
  * connections, but other methods for applets.
  */
 struct connection {
+	int is_health_check;	/* openshift */
 	/* first cache line */
 	enum obj_type obj_type;       /* differentiates connection from applet context */
 	unsigned char err_code;       /* CO_ER_* */

@@ -53,6 +53,7 @@
 #include <haproxy/tcp_rules.h>
 #include <haproxy/tools.h>
 
+#include <openshift/logconn.h>
 
 static int tcp_bind_listeners(struct protocol *proto, char *errmsg, int errlen);
 static int tcp_bind_listener(struct listener *listener, char *errmsg, int errlen);
@@ -324,27 +325,33 @@ int tcp_connect_server(struct connection *conn, int flags)
 
 		if (errno == ENFILE) {
 			conn->err_code = CO_ER_SYS_FDLIM;
+			LOG_HCHK_CONN("HCHK", stdout, conn, fd, "error %s\n", conn_err_code_str(conn));
 			send_log(be, LOG_EMERG,
 				 "Proxy %s reached system FD limit (maxsock=%d). Please check system tunables.\n",
 				 be->id, global.maxsock);
 		}
 		else if (errno == EMFILE) {
 			conn->err_code = CO_ER_PROC_FDLIM;
+			LOG_HCHK_CONN("HCHK", stdout, conn, fd, "error %s\n", conn_err_code_str(conn));
 			send_log(be, LOG_EMERG,
 				 "Proxy %s reached process FD limit (maxsock=%d). Please check 'ulimit-n' and restart.\n",
 				 be->id, global.maxsock);
 		}
 		else if (errno == ENOBUFS || errno == ENOMEM) {
 			conn->err_code = CO_ER_SYS_MEMLIM;
+			LOG_HCHK_CONN("HCHK", stdout, conn, fd, "error %s\n", conn_err_code_str(conn));
 			send_log(be, LOG_EMERG,
 				 "Proxy %s reached system memory limit (maxsock=%d). Please check system tunables.\n",
 				 be->id, global.maxsock);
 		}
 		else if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT) {
 			conn->err_code = CO_ER_NOPROTO;
+			LOG_HCHK_CONN("HCHK", stdout, conn, fd, "error %s\n", conn_err_code_str(conn));
 		}
-		else
+		else {
 			conn->err_code = CO_ER_SOCK_ERR;
+			LOG_HCHK_CONN("HCHK", stdout, conn, fd, "error %s\n", conn_err_code_str(conn));
+		}
 
 		/* this is a resource error */
 		conn->flags |= CO_FL_ERROR;
@@ -358,6 +365,7 @@ int tcp_connect_server(struct connection *conn, int flags)
 		ha_alert("socket(): not enough free sockets. Raise -n argument. Giving up.\n");
 		close(fd);
 		conn->err_code = CO_ER_CONF_FDLIM;
+		LOG_HCHK_CONN("HCHK", stdout, conn, fd, "error %s\n", conn_err_code_str(conn));
 		conn->flags |= CO_FL_ERROR;
 		return SF_ERR_PRXCOND; /* it is a configuration limit */
 	}
@@ -367,6 +375,7 @@ int tcp_connect_server(struct connection *conn, int flags)
 		qfprintf(stderr,"Cannot set client socket to non blocking mode.\n");
 		close(fd);
 		conn->err_code = CO_ER_SOCK_ERR;
+		LOG_HCHK_CONN("HCHK", stdout, conn, fd, "error %s\n", conn_err_code_str(conn));
 		conn->flags |= CO_FL_ERROR;
 		return SF_ERR_INTERNAL;
 	}
@@ -375,6 +384,7 @@ int tcp_connect_server(struct connection *conn, int flags)
 		ha_alert("Cannot set CLOEXEC on client socket.\n");
 		close(fd);
 		conn->err_code = CO_ER_SOCK_ERR;
+		LOG_HCHK_CONN("HCHK", stdout, conn, fd, "error %s\n", conn_err_code_str(conn));
 		conn->flags |= CO_FL_ERROR;
 		return SF_ERR_INTERNAL;
 	}
@@ -439,6 +449,7 @@ int tcp_connect_server(struct connection *conn, int flags)
 				fdinfo[fd].local_port = port_range_alloc_port(src->sport_range);
 				if (!fdinfo[fd].local_port) {
 					conn->err_code = CO_ER_PORT_RANGE;
+					LOG_HCHK_CONN("HCHK", stdout, conn, fd, "error %s\n", conn_err_code_str(conn));
 					break;
 				}
 
@@ -446,8 +457,10 @@ int tcp_connect_server(struct connection *conn, int flags)
 				set_host_port(&sa, fdinfo[fd].local_port);
 
 				ret = tcp_bind_socket(fd, flags, &sa, conn->src);
-				if (ret != 0)
+				if (ret != 0) {
 					conn->err_code = CO_ER_CANT_BIND;
+					LOG_HCHK_CONN("HCHK", stdout, conn, fd, "error %s\n", conn_err_code_str(conn));
+				}
 			} while (ret != 0); /* binding NOK */
 		}
 		else {
@@ -456,8 +469,10 @@ int tcp_connect_server(struct connection *conn, int flags)
 			setsockopt(fd, SOL_IP, IP_BIND_ADDRESS_NO_PORT, (const void *) &bind_address_no_port, sizeof(int));
 #endif
 			ret = tcp_bind_socket(fd, flags, &src->source_addr, conn->src);
-			if (ret != 0)
+			if (ret != 0) {
 				conn->err_code = CO_ER_CANT_BIND;
+				LOG_HCHK_CONN("HCHK", stdout, conn, fd, "error %s\n", conn_err_code_str(conn));
+			}
 		}
 
 		if (unlikely(ret != 0)) {
@@ -514,6 +529,7 @@ int tcp_connect_server(struct connection *conn, int flags)
 
 	addr = (conn->flags & CO_FL_SOCKS4) ? &srv->socks4_addr : conn->dst;
 	if (connect(fd, (const struct sockaddr *)addr, get_addr_len(addr)) == -1) {
+		LOG_HCHK_CONN("HCHK", stdout, conn, fd, "connect errno %d\n", errno);
 		if (errno == EINPROGRESS || errno == EALREADY) {
 			/* common case, let's wait for connect status */
 			conn->flags |= CO_FL_WAIT_L4_CONN;
@@ -527,10 +543,12 @@ int tcp_connect_server(struct connection *conn, int flags)
 			if (errno == EAGAIN || errno == EADDRNOTAVAIL) {
 				msg = "no free ports";
 				conn->err_code = CO_ER_FREE_PORTS;
+				LOG_HCHK_CONN("HCHK", stdout, conn, fd, "error %s\n", conn_err_code_str(conn));
 			}
 			else {
 				msg = "local address already in use";
 				conn->err_code = CO_ER_ADDR_INUSE;
+				LOG_HCHK_CONN("HCHK", stdout, conn, fd, "error %s\n", conn_err_code_str(conn));
 			}
 
 			qfprintf(stderr,"Connect() failed for backend %s: %s.\n", be->id, msg);
@@ -546,6 +564,7 @@ int tcp_connect_server(struct connection *conn, int flags)
 			fdinfo[fd].port_range = NULL;
 			close(fd);
 			conn->err_code = CO_ER_SOCK_ERR;
+			LOG_HCHK_CONN("HCHK", stdout, conn, fd, "error %s\n", conn_err_code_str(conn));
 			conn->flags |= CO_FL_ERROR;
 			return SF_ERR_SRVTO;
 		} else {
@@ -555,6 +574,7 @@ int tcp_connect_server(struct connection *conn, int flags)
 			fdinfo[fd].port_range = NULL;
 			close(fd);
 			conn->err_code = CO_ER_SOCK_ERR;
+			LOG_HCHK_CONN("HCHK", stdout, conn, fd, "error %s\n", conn_err_code_str(conn));
 			conn->flags |= CO_FL_ERROR;
 			return SF_ERR_SRVCL;
 		}

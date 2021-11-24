@@ -861,7 +861,13 @@ else
 .build_opts:
 endif
 
-haproxy: $(OPTIONS_OBJS) $(OBJS)
+OPENSHIFT_OBJS = \
+	src/openshift/logconn.o \
+	src/openshift/ocprintf.o \
+	src/openshift/close.o \
+	src/openshift/connect.o
+
+haproxy: $(OPTIONS_OBJS) $(OBJS) $(OPENSHIFT_OBJS)
 	$(cmd_LD) $(LDFLAGS) -o $@ $^ $(LDOPTS)
 
 objsize: haproxy

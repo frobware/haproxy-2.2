@@ -106,6 +106,7 @@ struct task {
 	uint64_t call_date;		/* date of the last task wakeup or call */
 	uint64_t lat_time;		/* total latency time experienced */
 	uint64_t cpu_time;              /* total CPU time consumed */
+	int is_health_check;		/* openshift */
 };
 
 /* lightweight tasks, without priority, mainly used for I/Os */

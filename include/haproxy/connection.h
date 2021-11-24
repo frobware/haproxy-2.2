@@ -314,6 +314,7 @@ static inline void cs_init(struct conn_stream *cs, struct connection *conn)
  */
 static inline void conn_init(struct connection *conn)
 {
+	conn->is_health_check = 0;
 	conn->obj_type = OBJ_TYPE_CONN;
 	conn->flags = CO_FL_NONE;
 	conn->mux = NULL;

@@ -3142,6 +3142,9 @@ static void set_identity(const char *program_name)
 	}
 }
 
+#define PID1_STDOUT "/proc/1/fd/1"
+#define PID1_STDERR "/proc/1/fd/2"
+
 int main(int argc, char **argv)
 {
 	int err, retry;
@@ -3680,10 +3683,22 @@ int main(int argc, char **argv)
 		 */
 		if ((global.mode & MODE_DAEMON) &&
 		    (!(global.mode & MODE_QUIET) || (global.mode & MODE_VERBOSE))) {
-			/* detach from the tty */
-			stdio_quiet(devnullfd);
-			global.mode &= ~MODE_VERBOSE;
-			global.mode |= MODE_QUIET; /* ensure that we won't say anything from now */
+			FILE *new_stdout;
+			FILE *new_stderr;
+			global.mode |= MODE_VERBOSE;
+			global.mode &= ~MODE_QUIET;
+			if ((new_stdout = freopen(PID1_STDOUT, "w", stdout)) != NULL) {
+				stdout = new_stdout;
+				fprintf(stdout, "reopening stdout on %s\n", PID1_STDOUT);
+			} else {
+				fprintf(stderr, "fopen %s failed: %s; switching to stdout\n", PID1_STDOUT, strerror(errno));
+			}
+			if ((new_stderr = freopen(PID1_STDERR, "w", stderr)) != NULL) {
+				stderr = new_stderr;
+				fprintf(stdout, "reopening stderr on %s\n", PID1_STDERR);
+			} else {
+				fprintf(stderr, "fopen %s failed: %s; switching to stderr\n", PID1_STDERR, strerror(errno));
+			}
 		}
 		pid = getpid(); /* update child's pid */
 		if (!(global.mode & MODE_MWORKER)) /* in mworker mode we don't want a new pgid for the children */
