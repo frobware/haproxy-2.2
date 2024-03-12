@@ -88,6 +88,67 @@
           "openssl-1.1.1w"
         ];
       });
+
+      sharedNativeBuildInputs = [
+        pkgs.gdb
+        pkgs.pkg-config
+        pkgs.valgrind
+      ];
+
+      sharedShellHook = ''
+        export LD=$CC
+        export CPU="generic"
+        export TARGET="linux-glibc"
+        export USE_REGPARM="1"
+        export USE_OPENSSL="1"
+        export USE_PCRE="1"
+        export USE_ZLIB="1"
+        export USE_CRYPT_H="1"
+        export USE_LINUX_TPROXY="1"
+        export USE_GETADDRINFO="1"
+        export DEBUG_CFLAGS="-g -ggdb3 -O0 -fno-omit-frame-pointer -fno-inline"
+        export MAKEFLAGS='-j$(nproc) -e'
+        unset NIX_HARDENING_ENABLE
+        export NIX_PATH=nixpkgs=${pkgs.path}
+      '';
+    in rec {
+      haproxy26 = pkgs.mkShell {
+        buildInputs = [
+          self.packages.${system}.default.buildInputs
+        ];
+        nativeBuildInputs = sharedNativeBuildInputs ++ [
+          pkgs.gcc11
+          pkgs.openssl_3
+        ];
+        shellHook = ''
+          echo "haproxy26+ dev environment"
+        '' + sharedShellHook;
+      };
+
+      haproxy22 = pkgs.mkShell {
+        buildInputs = [
+          self.packages.${system}.default.buildInputs
+        ];
+        nativeBuildInputs = sharedNativeBuildInputs ++ [
+          pkgs.gcc8
+          pkgs.openssl_1_1
+        ];
+        shellHook = ''
+          echo "haproxy22 dev environment"
+        '' + sharedShellHook;
+      };
+
+      default = haproxy26;
+      haproxy28 = haproxy26;
+    });
+
+    xdevShells = forAllSystems (system: let
+      pkgs = (import nixpkgs {
+        inherit system;
+        config.permittedInsecurePackages = [
+          "openssl-1.1.1w"
+        ];
+      });
     in {
       default = pkgs.mkShell {
         buildInputs = [
