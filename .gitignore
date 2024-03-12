@@ -50,6 +50,6 @@ contrib/hpack/gen-rht
 contrib/tcploop/tcploop
 /src/dlmalloc.c
 /tests/test_hashes
-*.lock
+flake.lock
 *.nix
 .envrc
