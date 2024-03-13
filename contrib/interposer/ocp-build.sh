@@ -2,7 +2,7 @@
 
 set -eux
 
-DEBUG_CFLAGS="${DEBUG_CFLAGS}"
+: "${DEBUG_CFLAGS:=""}"
 VERSION=$(cat VERSION)
 
 if [[ ${USE_CONTRIB_INTERPOSER_ACCEPT:-0} -eq 1 ]]; then

@@ -256,8 +256,6 @@ static void *connection_state_handler(void *userarg)
 
 static __attribute__((constructor (102))) void setup(void)
 {
-	pthread_t connection_state_tid;
-
 	fp_dbg = stderr;
 
 	if ((libc_fork = dlsym(RTLD_NEXT, "fork")) == NULL) {
@@ -288,10 +286,6 @@ static __attribute__((constructor (102))) void setup(void)
 
 	if (on_exit(exit_handler, NULL) != 0) {
 		abort();
-	}
-
-	if (pthread_create(&connection_state_tid, NULL, &connection_state_handler, NULL) != 0) {
-		PERROR("error: pthread_create: %s\n", strerror_r(errno, _errbuf, sizeof(_errbuf)));
 	}
 
 	DBG("ACCEPT INTERPOSER initialised\n");
@@ -374,7 +368,6 @@ int accept4(int sockfd, struct sockaddr *sa, socklen_t *salen, int flags)
 		break;
 	}
 
-	write_connection_state(1);
 	UNLOCK_FDTAB;
 
 	return clientfd;
