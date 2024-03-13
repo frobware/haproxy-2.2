@@ -109,6 +109,12 @@
         export DEBUG_CFLAGS="-g -ggdb3 -O0 -fno-omit-frame-pointer -fno-inline"
         export MAKEFLAGS='-j$(nproc) -e'
         unset NIX_HARDENING_ENABLE
+        export SRC=${self.packages.${system}.default.src}
+        echo "HAProxy source is at: $SRC"
+        # Setting NIX_PATH explicitly so that nix-prefetch-url can
+        # find the nixpkgs location. This is essential because a
+        # pure shell does not inherit NIX_PATH from the parent
+        # environment.
         export NIX_PATH=nixpkgs=${pkgs.path}
       '';
     in rec {
@@ -141,55 +147,6 @@
       haproxy28 = haproxy26;
 
       default = haproxy28;
-    });
-
-    xdevShells = forAllSystems (system: let
-      pkgs = (import nixpkgs {
-        inherit system;
-        config.permittedInsecurePackages = [
-          "openssl-1.1.1w"
-        ];
-      });
-    in {
-      default = pkgs.mkShell {
-        buildInputs = [
-          self.packages.${system}.default.buildInputs
-          pkgs.gcc8
-        ];
-        nativeBuildInputs = [
-          pkgs.clang
-          pkgs.gdb
-          pkgs.openssl_1_1
-          pkgs.pkg-config
-          pkgs.valgrind
-          #for haproxy-2.2. versions use pkgs.gcc8
-        ];
-
-        shellHook = ''
-          export LD=$CC
-          export CPU="generic"
-          export TARGET="linux-glibc"
-          export USE_REGPARM="1"
-          export USE_OPENSSL="1"
-          export USE_PCRE="1"
-          export USE_ZLIB="1"
-          export USE_CRYPT_H="1"
-          export USE_LINUX_TPROXY="1"
-          export USE_GETADDRINFO="1"
-          export DEBUG_CFLAGS="-g -ggdb3 -O0 -fno-omit-frame-pointer -fno-inline"
-          export MAKEFLAGS='-j$(nproc) -e'
-
-          unset NIX_HARDENING_ENABLE
-
-          export SRC=${self.packages.${system}.default.src}
-          echo "HAProxy source is at: $SRC"
-          # Setting NIX_PATH explicitly so that nix-prefetch-url can
-          # find the nixpkgs location. This is essential because a
-          # pure shell does not inherit NIX_PATH from the parent
-          # environment.
-          export NIX_PATH=nixpkgs=${pkgs.path}
-        '';
-      };
     });
 
     overlays = {
