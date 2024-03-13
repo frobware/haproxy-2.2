@@ -161,9 +161,14 @@ static int write_connection_state(int fd) TSA_REQUIRES(&fdtab_lock)
 {
 	int write_error = 0;
 
+	write(fd, "hello\n", 6);
+
 	for (size_t i = 0; i < NELEMENTS(fdtab); i++) {
 		char msg[4096];
 		struct timespec elapsed_time;
+		char timebuf[256] = {'\0'};
+		struct timespec current_time = {0, 0};
+		int n;
 
 		if (fdtab[i].fd == -1) {
 			continue;
@@ -173,21 +178,21 @@ static int write_connection_state(int fd) TSA_REQUIRES(&fdtab_lock)
 			continue;
 		}
 
-		char timebuf[256] = {'\0'};
-		struct timespec current_time = {0, 0};
-
-		clock_gettime(CLOCK_MONOTONIC, &current_time);
+		clock_gettime(CLOCK_REALTIME, &current_time);
 		timespec_sub(&current_time, &fdtab[i].accept_time, &elapsed_time);
 		human_time(&elapsed_time, timebuf, sizeof(timebuf));
 
-		int n = snprintf(
-			msg, sizeof(msg), "pid:%d fd:%d %s%s%s:%d %s%s%s:%d %ld secs (%s)\n",
-			getpid(), fdtab[i].fd, fdtab[i].family == AF_INET6 ? "[" : "",
-			fdtab[i].local_address, fdtab[i].family == AF_INET6 ? "]" : "",
-			fdtab[i].local_port, fdtab[i].family == AF_INET6 ? "[" : "",
-			fdtab[i].peer_address, fdtab[i].family == AF_INET6 ? "]" : "",
-			fdtab[i].peer_port, elapsed_time.tv_sec, timebuf);
-		if (n > 0 && write(fd, msg, n) != n) {
+		n = snprintf(msg, sizeof(msg), "pid:%d fd:%d %s%s%s:%d %s%s%s:%d %ld secs (%s)\n",
+			     getpid(), fdtab[i].fd, fdtab[i].family == AF_INET6 ? "[" : "",
+			     fdtab[i].local_address, fdtab[i].family == AF_INET6 ? "]" : "",
+			     fdtab[i].local_port, fdtab[i].family == AF_INET6 ? "[" : "",
+			     fdtab[i].peer_address, fdtab[i].family == AF_INET6 ? "]" : "",
+			     fdtab[i].peer_port, elapsed_time.tv_sec, timebuf);
+		if (n < 0 || n >= sizeof(msg)) {
+			write_error = -1;
+			break;
+		}
+		if (write(fd, msg, n) != n) {
 			write_error = -1;
 			break;
 		}
@@ -251,6 +256,8 @@ static void *connection_state_handler(void *userarg)
 
 static __attribute__((constructor (102))) void setup(void)
 {
+	pthread_t connection_state_tid;
+
 	fp_dbg = stderr;
 
 	if ((libc_fork = dlsym(RTLD_NEXT, "fork")) == NULL) {
@@ -283,7 +290,11 @@ static __attribute__((constructor (102))) void setup(void)
 		abort();
 	}
 
-	DBG("ACCEPT-INTERPOSER initialised\n");
+	if (pthread_create(&connection_state_tid, NULL, &connection_state_handler, NULL) != 0) {
+		PERROR("error: pthread_create: %s\n", strerror_r(errno, _errbuf, sizeof(_errbuf)));
+	}
+
+	DBG("ACCEPT INTERPOSER initialised\n");
 	fp_dbg = NULL;
 	return;
 }
@@ -291,23 +302,22 @@ static __attribute__((constructor (102))) void setup(void)
 /* libc interposer */
 int accept(int sockfd, struct sockaddr *sa, socklen_t *salen)
 {
-	assert(libc_accept != NULL);
 	return accept4(sockfd, sa, salen, 0);
 }
 
 /* libc interposer */
 int accept4(int sockfd, struct sockaddr *sa, socklen_t *salen, int flags)
 {
+	struct sockaddr local_addr;
+	socklen_t local_addrlen = sizeof(local_addr);
+	int clientfd;
+
 	if (libc_accept4 == NULL) {
 		if ((libc_accept4 = dlsym(RTLD_NEXT, "accept4")) == NULL) {
 			PERROR("error: dlsym(accept4): %s\n", strerror_r(errno, _errbuf, sizeof(_errbuf)));
 			exit(EXIT_FAILURE); /* has to be fatal */
 		}
 	}
-
-	struct sockaddr local_addr;
-	socklen_t local_addrlen = sizeof(local_addr);
-	int clientfd;
 
 	assert(libc_accept4 != NULL);
 	clientfd = libc_accept4(sockfd, sa, salen, flags);
@@ -331,7 +341,7 @@ int accept4(int sockfd, struct sockaddr *sa, socklen_t *salen, int flags)
 	LOCK_FDTAB;
 	assert(fdtab[clientfd].fd == -1); /* sanity check; explicitly set in close() */
 	memset(&fdtab[clientfd], 0, sizeof(fdtab[clientfd]));
-	clock_gettime(CLOCK_MONOTONIC, &fdtab[clientfd].accept_time);
+	clock_gettime(CLOCK_REALTIME, &fdtab[clientfd].accept_time);
 	fdtab[clientfd].family = sa->sa_family;
 	fdtab[clientfd].fd = clientfd;
 
@@ -339,8 +349,7 @@ int accept4(int sockfd, struct sockaddr *sa, socklen_t *salen, int flags)
 	case AF_INET:
 		memset(&local_addr, 0, sizeof(local_addr));
 		if (getsockname(sockfd, &local_addr, &local_addrlen) == 0) {
-			fdtab[clientfd].local_port =
-				ntohs(((struct sockaddr_in *)&local_addr)->sin_port);
+			fdtab[clientfd].local_port = ntohs(((struct sockaddr_in *)&local_addr)->sin_port);
 			inet_ntop(AF_INET, &(((struct sockaddr_in *)&local_addr)->sin_addr),
 				  fdtab[clientfd].local_address,
 				  sizeof(fdtab[clientfd].local_address));
@@ -352,9 +361,8 @@ int accept4(int sockfd, struct sockaddr *sa, socklen_t *salen, int flags)
 		break;
 	case AF_INET6:
 		memset(&local_addr, 0, sizeof(local_addr));
-		if (getpeername(sockfd, &local_addr, &local_addrlen) == 0) {
-			fdtab[clientfd].local_port =
-				ntohs(((struct sockaddr_in6 *)&local_addr)->sin6_port);
+		if (getsockname(sockfd, &local_addr, &local_addrlen) == 0) {
+			fdtab[clientfd].local_port = ntohs(((struct sockaddr_in6 *)&local_addr)->sin6_port);
 			inet_ntop(AF_INET, &(((struct sockaddr_in6 *)&local_addr)->sin6_addr),
 				  fdtab[clientfd].local_address,
 				  sizeof(fdtab[clientfd].local_address));
@@ -366,6 +374,7 @@ int accept4(int sockfd, struct sockaddr *sa, socklen_t *salen, int flags)
 		break;
 	}
 
+	write_connection_state(1);
 	UNLOCK_FDTAB;
 
 	return clientfd;
@@ -374,6 +383,8 @@ int accept4(int sockfd, struct sockaddr *sa, socklen_t *salen, int flags)
 /* libc interposer */
 int close(int fd)
 {
+	int rc;
+
 	if (libc_close == NULL) {
 		if ((libc_close = dlsym(RTLD_NEXT, "close")) == NULL) {
 			PERROR("error: dlsym(close): %s\n", strerror_r(errno, _errbuf, sizeof(_errbuf)));
@@ -389,7 +400,7 @@ int close(int fd)
 		UNLOCK_FDTAB;
 	}
 
-	int rc = libc_close(fd);
+	rc = libc_close(fd);
 	DBG("close(%d) = %d\n", fd, rc);
 	return rc;
 }
@@ -397,6 +408,8 @@ int close(int fd)
 /* libc interposer */
 pid_t fork(void)
 {
+	pid_t pid;
+
 	if (libc_fork == NULL) {
 		if ((libc_fork = dlsym(RTLD_NEXT, "fork")) == NULL) {
 			PERROR("error: dlsym(fork): %s\n", strerror_r(errno, _errbuf, sizeof(_errbuf)));
@@ -405,11 +418,11 @@ pid_t fork(void)
 	}
 
 	assert(libc_fork != NULL);
-	pid_t pid = libc_fork();
+	pid = libc_fork();
 
 	if (pid == 0) {
-		DBG("fork: child %d\n", getpid());
 		pthread_t connection_state_tid;
+		DBG("fork: child %d\n", getpid());
 		if (pthread_create(&connection_state_tid, NULL, &connection_state_handler, NULL) != 0) {
 			PERROR("error: pthread_create: %s\n", strerror_r(errno, _errbuf, sizeof(_errbuf)));
 		}

@@ -2,18 +2,16 @@
 
 set -eux
 
-GDB_DEBUG="-Og -ggdb3"
-GDB_DEBUG=""
-DEBUG_CFLAGS="${GDB_DEBUG}"
+DEBUG_CFLAGS="${DEBUG_CFLAGS}"
 VERSION=$(cat VERSION)
 
 if [[ ${USE_CONTRIB_INTERPOSER_ACCEPT:-0} -eq 1 ]]; then
-    DEBUG_CFLAGS="$DEBUG_CFLAGS -DUSE_CONTRIB_INTERPOSER_ACCEPT"
+    DEBUG_CFLAGS+=" -DUSE_CONTRIB_INTERPOSER_ACCEPT"
     VERSION+="-accept-interposer"
 fi
 
 if [[ ${USE_CONTRIB_INTERPOSER_MALLOC:-0} -eq 1 ]]; then
-    DEBUG_CFLAGS="$DEBUG_CFLAGS -DUSE_CONTRIB_INTERPOSER_MALLOC"
+    DEBUG_CFLAGS+=" -DUSE_CONTRIB_INTERPOSER_MALLOC"
     VERSION+="-malloc-interposer"
 fi
 
@@ -23,7 +21,7 @@ if [[ ! -z "${VERSION:-}" ]]; then
     export IGNOREGIT=1
     export VERDATE="$(date +%FT%H-%M-%S-%Z)"
     export VERSION
-fi    
+fi
 
 make CPU="generic" \
      TARGET="linux-glibc" \
@@ -34,9 +32,8 @@ make CPU="generic" \
      USE_LINUX_TPROXY=1 \
      USE_GETADDRINFO=1 \
      V=1 \
-     EXTRA_OBJS="contrib/interposer/accept.c contrib/interposer/malloc.c" \
+     EXTRA_OBJS="contrib/interposer/accept.o" \
      DEBUG_CFLAGS="$DEBUG_CFLAGS" \
-     LDFLAGS="$GDB_DEBUG" \
      "$@" \
 
 # Everything after V=1 are custom additions; OpenShift does not build

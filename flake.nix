@@ -90,9 +90,11 @@
       });
 
       sharedNativeBuildInputs = [
+        pkgs.ccache
         pkgs.gdb
         pkgs.pkg-config
         pkgs.valgrind
+        pkgs.socat
       ];
 
       sharedShellHook = ''
