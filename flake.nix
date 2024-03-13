@@ -1,7 +1,7 @@
 {
   description = "A flake offering various versions of HAProxy, built in the style of OpenShift Ingress.";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.11";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs = { self, nixpkgs, ... }: let
     forAllSystems = function: nixpkgs.lib.genAttrs [ "aarch64-linux" "x86_64-linux" ] (
@@ -112,19 +112,6 @@
         export NIX_PATH=nixpkgs=${pkgs.path}
       '';
     in rec {
-      haproxy26 = pkgs.mkShell {
-        buildInputs = [
-          self.packages.${system}.default.buildInputs
-        ];
-        nativeBuildInputs = sharedNativeBuildInputs ++ [
-          pkgs.gcc11
-          pkgs.openssl_3
-        ];
-        shellHook = ''
-          echo "haproxy26+ dev environment"
-        '' + sharedShellHook;
-      };
-
       haproxy22 = pkgs.mkShell {
         buildInputs = [
           self.packages.${system}.default.buildInputs
@@ -138,8 +125,22 @@
         '' + sharedShellHook;
       };
 
-      default = haproxy26;
+      haproxy26 = pkgs.mkShell {
+        buildInputs = [
+          self.packages.${system}.default.buildInputs
+        ];
+        nativeBuildInputs = sharedNativeBuildInputs ++ [
+          pkgs.gcc11
+          pkgs.openssl_3
+        ];
+        shellHook = ''
+          echo "haproxy26+ dev environment"
+        '' + sharedShellHook;
+      };
+
       haproxy28 = haproxy26;
+
+      default = haproxy28;
     });
 
     xdevShells = forAllSystems (system: let
